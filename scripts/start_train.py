@@ -24,18 +24,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-try:
-    from alibabacloud_pai_dlc20201203.client import Client as DLCClient
-    from alibabacloud_pai_dlc20201203 import models as dlc_models
-    from alibabacloud_tea_openapi import models as openapi_models
-except ImportError as exc:
-    print(
-        "Missing Alibaba Cloud SDK dependencies. Install them with:\n"
-        "  python3 -m pip install --user "
-        "alibabacloud_pai-dlc20201203 alibabacloud_tea_openapi python-dotenv",
-        file=sys.stderr,
-    )
-    raise SystemExit(2) from exc
+DLCClient: Any = None
+dlc_models: Any = None
+openapi_models: Any = None
 
 
 DEFAULT_ENV_FILES = [
@@ -46,6 +37,10 @@ DEFAULT_ENV_FILES = [
 
 DONE_STATUSES = {"Succeeded", "Succeed", "SUCCESS", "SUCCEEDED"}
 FAILED_STATUSES = {"Failed", "FAILED", "Stopped", "STOPPED", "Deleted", "DELETED"}
+DEFAULT_JOB_TYPE = "PyTorch"
+DEFAULT_JOB_ROLE = "Worker"
+DEFAULT_ACCESSIBILITY = "PRIVATE"
+DEFAULT_POD_COUNT = 1
 
 
 def log(message: str) -> None:
@@ -93,7 +88,30 @@ def require_value(value: str | None, name: str) -> str:
     return value
 
 
-def create_client(region_id: str) -> DLCClient:
+def load_dlc_sdk() -> None:
+    global DLCClient, dlc_models, openapi_models
+    if DLCClient and dlc_models and openapi_models:
+        return
+    try:
+        from alibabacloud_pai_dlc20201203.client import Client
+        from alibabacloud_pai_dlc20201203 import models
+        from alibabacloud_tea_openapi import models as tea_openapi_models
+    except ImportError as exc:
+        print(
+            "Missing Alibaba Cloud SDK dependencies. Install them with:\n"
+            "  python3 -m pip install --user "
+            "alibabacloud_pai-dlc20201203 alibabacloud_tea_openapi python-dotenv",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
+
+    DLCClient = Client
+    dlc_models = models
+    openapi_models = tea_openapi_models
+
+
+def create_client(region_id: str) -> Any:
+    load_dlc_sdk()
     access_key_id = require_value(
         env_first("ALIBABA_CLOUD_ACCESS_KEY_ID", "ALIBABACLOUD_ACCESS_KEY_ID", "OSS_ACCESS_KEY_ID"),
         "ALIBABA_CLOUD_ACCESS_KEY_ID or OSS_ACCESS_KEY_ID",
@@ -183,9 +201,9 @@ def build_job_request(args: argparse.Namespace) -> Any:
         resource_config.gputype = args.gpu_type
 
     job_spec = dlc_models.JobSpec(
-        type=args.role,
+        type=DEFAULT_JOB_ROLE,
         image=image,
-        pod_count=args.pod_count,
+        pod_count=DEFAULT_POD_COUNT,
         ecs_spec=ecs_spec,
         resource_config=resource_config,
     )
@@ -194,15 +212,13 @@ def build_job_request(args: argparse.Namespace) -> Any:
         display_name=args.job_name,
         workspace_id=workspace_id,
         resource_id=resource_id,
-        job_type=args.job_type,
+        job_type=DEFAULT_JOB_TYPE,
         job_specs=[job_spec],
         data_sources=make_data_sources(args),
         user_command=build_train_command(args),
-        accessibility=args.accessibility,
+        accessibility=DEFAULT_ACCESSIBILITY,
         job_max_running_time_minutes=args.max_running_minutes,
         description=args.description,
-        thirdparty_libs=args.thirdparty_libs,
-        thirdparty_lib_dir=args.thirdparty_lib_dir,
         envs={
             "DATASET_PATH": args.dataset_path,
             "EPOCHS": str(args.epochs),
@@ -269,45 +285,46 @@ def stop_job(client: DLCClient, job_id: str) -> None:
     print_json(response.body)
 
 
-def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--region", default=os.getenv("ALIYUN_REGION", "cn-hangzhou"))
-    parser.add_argument("--env-file", help="Optional .env file with Alibaba Cloud credentials and PAI defaults")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Submit PAI DLC training jobs from ECS.")
-    add_common_args(parser)
+
+    parser.add_argument("--region", default=os.getenv("ALIYUN_REGION", "cn-hangzhou"))
+    parser.add_argument("--env-file", help="Optional .env file with Alibaba Cloud credentials and PAI defaults")
     sub = parser.add_subparsers(dest="command_name", required=True)
 
     submit = sub.add_parser("submit", help="Create a PAI DLC training job")
-    submit.add_argument("--dataset-path", required=True, help="Path visible inside DLC container, for example /mnt/nas/dataset")
-    submit.add_argument("--epochs", required=True, type=int)
-    submit.add_argument("--checkpoint-path", required=True)
-    submit.add_argument("--checkpoint-frequency", required=True, type=int)
-    submit.add_argument("--gpu-count", required=True, type=int)
-    submit.add_argument("--job-name", default="evo-train")
-    submit.add_argument("--workspace-id", help="Defaults to PAI_WORKSPACE_ID")
-    submit.add_argument("--resource-id", help="Defaults to PAI_RESOURCE_ID")
-    submit.add_argument("--image", help="Training image. Defaults to PAI_DLC_IMAGE")
-    submit.add_argument("--ecs-spec", help="PAI DLC ECS spec. Defaults to PAI_ECS_SPEC")
-    submit.add_argument("--gpu-type")
-    submit.add_argument("--cpu", type=int)
-    submit.add_argument("--memory", type=int, help="Memory in GB")
-    submit.add_argument("--pod-count", type=int, default=1)
-    submit.add_argument("--role", default="Worker")
-    submit.add_argument("--job-type", default="PyTorch")
-    submit.add_argument("--accessibility", default="PRIVATE")
-    submit.add_argument("--max-running-minutes", type=int)
-    submit.add_argument("--description")
-    submit.add_argument("--mount", action="append", help="Mount data source as URI=MOUNT_PATH[:RO|RW], for example nas://xxx/=/mnt/nas:RW")
-    submit.add_argument("--command", help="Full training command. Overrides command template")
-    submit.add_argument("--command-template", help="Template using {dataset_path}, {epochs}, {checkpoint_path}, {checkpoint_frequency}, {gpu_count}")
-    submit.add_argument("--thirdparty-libs", action="append")
-    submit.add_argument("--thirdparty-lib-dir")
-    submit.add_argument("--wait", action="store_true")
-    submit.add_argument("--timeout", type=int, default=86400)
-    submit.add_argument("--interval", type=int, default=30)
-    submit.add_argument("--dry-run", action="store_true", help="Print CreateJob request without submitting")
+
+    train_args = submit.add_argument_group("training arguments")
+    train_args.add_argument("--dataset-path", required=True, help="Path visible inside DLC container, for example /mnt/nas/dataset")
+    train_args.add_argument("--epochs", required=True, type=int)
+    train_args.add_argument("--checkpoint-path", required=True)
+    train_args.add_argument("--checkpoint-frequency", required=True, type=int)
+    train_args.add_argument("--command", help="Full training command. Overrides command template")
+    train_args.add_argument("--command-template", help="Template using {dataset_path}, {epochs}, {checkpoint_path}, {checkpoint_frequency}, {gpu_count}")
+
+    pai_args = submit.add_argument_group("PAI DLC job arguments")
+    pai_args.add_argument("--job-name", default="evo-train")
+    pai_args.add_argument("--workspace-id", help="Defaults to PAI_WORKSPACE_ID")
+    pai_args.add_argument("--resource-id", help="Defaults to PAI_RESOURCE_ID")
+    pai_args.add_argument("--image", help="Training image. Defaults to PAI_DLC_IMAGE")
+    pai_args.add_argument("--description")
+
+    resource_args = submit.add_argument_group("resource arguments")
+    resource_args.add_argument("--ecs-spec", help="PAI DLC ECS spec. Defaults to PAI_ECS_SPEC")
+    resource_args.add_argument("--gpu-count", required=True, type=int)
+    resource_args.add_argument("--gpu-type")
+    resource_args.add_argument("--cpu", type=int)
+    resource_args.add_argument("--memory", type=int, help="Memory in GB")
+    resource_args.add_argument("--max-running-minutes", type=int)
+
+    data_args = submit.add_argument_group("data arguments")
+    data_args.add_argument("--mount", action="append", help="Mount data source as URI=MOUNT_PATH[:RO|RW], for example nas://xxx/=/mnt/nas:RW")
+
+    execution_args = submit.add_argument_group("execution arguments")
+    execution_args.add_argument("--wait", action="store_true")
+    execution_args.add_argument("--timeout", type=int, default=86400)
+    execution_args.add_argument("--interval", type=int, default=30)
+    execution_args.add_argument("--dry-run", action="store_true", help="Print CreateJob request without submitting")
 
     status = sub.add_parser("status", help="Show DLC job status")
     status.add_argument("--job-id", required=True)
