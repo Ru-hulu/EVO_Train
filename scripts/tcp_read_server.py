@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
-"""TCP server that prints data from many concurrent connections.
+"""TCP server for remote training task creation.
 
 Typical usage:
-  python3 scripts/tcp_read_server.py --host 0.0.0.0 --port 9000
+  python3 server.py --host 0.0.0.0 --port 9884
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import selectors
 import socket
 import sys
 from dataclasses import dataclass
+from typing import Any
 
 
 DEFAULT_HOST = "0.0.0.0"
-DEFAULT_PORT = 9000
+DEFAULT_PORT = 9884
 DEFAULT_MAX_CONNECTIONS = 1000
 DEFAULT_RECV_BYTES = 4096
+TASKS_BY_USER: dict[str, list[dict[str, str]]] = {}
 
 
 @dataclass
@@ -97,12 +100,32 @@ def read_client(
         close_client(selector, client, "peer closed")
         return
 
-    prefix = f"[{format_address(client.address)}] "
     text = data.decode(encoding, errors="replace")
-    for line in text.splitlines(keepends=True):
-        print(prefix + line, end="" if line.endswith("\n") else "\n", flush=True)
-    if not text:
-        print(prefix + repr(data), flush=True)
+    response = handle_request(text)
+    client.socket.sendall(json.dumps(response, ensure_ascii=False).encode(encoding))
+    close_client(selector, client, "response sent")
+
+
+def handle_request(text: str) -> dict[str, Any]:
+    try:
+        request = json.loads(text)
+    except json.JSONDecodeError:
+        return {"message": "invalid json", "tasks": []}
+
+    username = str(request.get("username") or "").strip()
+    task_name = str(request.get("taskName") or "").strip()
+    action = str(request.get("action") or "").strip()
+    if not username or not task_name or action != "开始训练":
+        return {"message": "invalid request", "tasks": TASKS_BY_USER.get(username, [])}
+
+    tasks = TASKS_BY_USER.setdefault(username, [])
+    if any(task["taskName"] == task_name for task in tasks):
+        message = "create task failed"
+    else:
+        tasks.append({"taskName": task_name, "status": ""})
+        message = "create task success"
+
+    return {"message": message, "tasks": tasks}
 
 
 def serve(args: argparse.Namespace) -> None:
