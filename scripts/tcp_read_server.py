@@ -115,9 +115,12 @@ def handle_request(text: str) -> dict[str, Any]:
     username = str(request.get("username") or "").strip()
     task_name = str(request.get("taskName") or "").strip()
     action = str(request.get("action") or "").strip()
+    tasks = TASKS_BY_USER.setdefault(username, [])
+    if action == "任务同步":
+        message = "sync success"
+        return {"message": message, "tasks": tasks}
     if not username or not task_name:
         return {"message": "invalid request", "tasks": TASKS_BY_USER.get(username, [])}
-    tasks = TASKS_BY_USER.setdefault(username, [])
     if action == "开始训练":
         if any(task["taskName"] == task_name for task in tasks):
             message = "create task failed"
