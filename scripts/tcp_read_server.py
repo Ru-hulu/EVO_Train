@@ -115,16 +115,22 @@ def handle_request(text: str) -> dict[str, Any]:
     username = str(request.get("username") or "").strip()
     task_name = str(request.get("taskName") or "").strip()
     action = str(request.get("action") or "").strip()
-    if not username or not task_name or action != "开始训练":
+    if not username or not task_name:
         return {"message": "invalid request", "tasks": TASKS_BY_USER.get(username, [])}
-
-    tasks = TASKS_BY_USER.setdefault(username, [])
-    if any(task["taskName"] == task_name for task in tasks):
-        message = "create task failed"
-    else:
-        tasks.append({"taskName": task_name, "status": ""})
-        message = "create task success"
-
+    if  action == "开始训练":
+        tasks = TASKS_BY_USER.setdefault(username, [])
+        if any(task["taskName"] == task_name for task in tasks):
+            message = "create task failed"
+        else:
+            tasks.append({"taskName": task_name, "status": ""})
+            message = "create task success"
+    elif action == "结束训练":
+        tasks = TASKS_BY_USER.setdefault(username, [])
+        if any(task["taskName"] == task_name for task in tasks):
+            tasks.remove({"taskName": task_name})
+            message = "delete task success"
+        else:
+            message = "delete task failed"
     return {"message": message, "tasks": tasks}
 
 
