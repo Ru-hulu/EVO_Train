@@ -104,24 +104,24 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    """Run a standalone thread-pool debug demo."""
-    args = build_parser().parse_args()
-    pool = ThreadPool(args.workers)
-    pool.start()
+# def main() -> int:
+#     """Run a standalone thread-pool debug demo."""
+#     args = build_parser().parse_args()
+#     pool = ThreadPool(args.workers)
+#     pool.start()
 
-    for index in range(10):
-        pool.submit(
-            TrainTaskEvent(
-                client_id=f"client-{index}",
-                request_text=f'{{"username":"user-{index % 3}","action":"任务同步"}}',
-            )
-        )
+#     for index in range(10):
+#         pool.submit(
+#             TrainTaskEvent(
+#                 client_id=f"client-{index}",
+#                 request_text=f'{{"username":"user-{index % 3}","action":"任务同步"}}',
+#             )
+#         )
 
-    pool.train_task_queue.join()
-    pool.stop()
-    return 0
+#     pool.train_task_queue.join()
+#     pool.stop()
+#     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+# if __name__ == "__main__":
+#     raise SystemExit(main())
