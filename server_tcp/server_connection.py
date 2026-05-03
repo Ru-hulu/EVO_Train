@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """Socket connection layer wired to the training task thread pool."""
-# TODO
-# 一个后续要注意的点：现在还是简单 recv(4096)，如果客户端连续快速发送多条 JSON，TCP 可能把它们粘在一起。后面正式接业务前，建议加一个简单协议，比如每条 JSON 后加 \n，或者用长度头。
 from __future__ import annotations
 
 import argparse
@@ -12,8 +10,14 @@ import socket
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+for module_path in (PROJECT_ROOT, PROJECT_ROOT / "train.py", PROJECT_ROOT / "thread_pool"):
+    sys.path.insert(0, str(module_path))
+
+from server_function import handle_request_text
 from thread_pool import ThreadPool, TrainTaskEvent
 
 
@@ -30,6 +34,7 @@ class Client:
     address: tuple[str, int]
     last_active: float
     idle_deadline: float = 0.0
+    read_buffer: str = ""
     closed: bool = False
 
     @property
@@ -132,6 +137,8 @@ def make_response_callback(
 
     def send_response(response_text: str) -> None:
         try:
+            if not response_text.endswith("\n"):
+                response_text += "\n"
             client.socket.sendall(response_text.encode(encoding))
             log(f"response sent to {client.id}")
         except OSError as exc:
@@ -195,7 +202,15 @@ def read_client(
         return
 
     schedule_idle_timeout(timer_heap, timer_counter, client, idle_timeout)
-    request_text = data.decode(encoding, errors="replace")
+    client.read_buffer += data.decode(encoding, errors="replace")
+    if "\n" not in client.read_buffer:
+        return None
+        # Todo: 如果这里的数据不完整，或许也需要向用户发送结果？
+    request_text, client.read_buffer = client.read_buffer.split("\n", 1)
+    request_text = request_text.strip()
+    if not request_text:
+        return None
+
     log(f"read event from {client.id}: {request_text}")
     return TrainTaskEvent(
         client_id=client.id,
@@ -220,7 +235,7 @@ def close_registered_sockets(selector: selectors.BaseSelector) -> None:
 def serve(args: argparse.Namespace) -> None:
     """Run the selector loop and hand read events to the worker pool."""
     selector = selectors.DefaultSelector()
-    pool = ThreadPool(args.workers)
+    pool = ThreadPool(args.workers, task_handler=handle_request_text)
     timer_heap: TimerHeap = []
     timer_counter = itertools.count()
     server = make_server_socket(args.host, args.port, args.max_connections)
