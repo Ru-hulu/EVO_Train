@@ -11,6 +11,90 @@ Typical usage:
 
 Required PAI settings can be passed as flags or environment variables:
   PAI_WORKSPACE_ID, PAI_DLC_IMAGE, PAI_RESOURCE_ID, PAI_ECS_SPEC
+
+Parameter notes:
+  Global arguments:
+    --region
+      Alibaba Cloud region used by the DLC API. Defaults to ALIYUN_REGION,
+      then cn-hangzhou.
+    --env-file
+      Extra .env file to load credentials and PAI defaults from.
+
+  submit training arguments:
+    --dataset-path
+      Dataset path visible inside the DLC container. This is passed to the
+      training command as --dataset-path and exported as DATASET_PATH.
+    --epochs
+      Number of training epochs. This is passed to the training command and
+      exported as EPOCHS.
+    --checkpoint-path
+      Directory for saving training checkpoints. This is passed to the training
+      command and exported as CHECKPOINT_PATH.
+    --checkpoint-frequency
+      Checkpoint save interval, usually measured in epochs by the training
+      script. This is passed to the training command and exported as
+      CHECKPOINT_FREQUENCY.
+    --command
+      Full command to run inside the DLC container. When set, it overrides the
+      generated training command and --command-template.
+    --command-template
+      Template used to build the training command. Available placeholders are
+      {dataset_path}, {epochs}, {checkpoint_path}, {checkpoint_frequency}, and
+      {gpu_count}. Defaults to DLC_TRAIN_COMMAND_TEMPLATE, then the built-in
+      train.py command.
+
+  submit PAI DLC job arguments:
+    --job-name
+      Display name of the DLC job in PAI.
+    --workspace-id
+      PAI workspace ID. Defaults to PAI_WORKSPACE_ID.
+    --resource-id
+      PAI resource group ID. Defaults to PAI_RESOURCE_ID.
+    --image
+      Training container image used by DLC. Defaults to PAI_DLC_IMAGE.
+    --description
+      Optional description shown on the DLC job.
+
+  submit resource arguments:
+    --ecs-spec
+      DLC ECS instance specification. Defaults to PAI_ECS_SPEC.
+    --gpu-count
+      Number of GPUs requested for the worker. Also exported as GPU_COUNT.
+    --gpu-type
+      Optional GPU type hint for the resource config.
+    --cpu
+      Optional CPU count requested for the worker.
+    --memory
+      Optional memory requested for the worker, in GB.
+    --max-running-minutes
+      Optional maximum runtime for the DLC job. PAI stops the job after this
+      limit.
+
+  submit data arguments:
+    --mount
+      Data source mount specification in URI=MOUNT_PATH[:RO|RW] format. Can be
+      passed multiple times, for example nas://xxx/=/mnt/nas:RW.
+
+  submit execution arguments:
+    --wait
+      Keep polling the DLC job after submission until it succeeds, fails, or
+      times out.
+    --timeout
+      Maximum seconds to wait when --wait is set. Defaults to 86400.
+    --interval
+      Polling interval in seconds when --wait is set. Defaults to 30.
+    --dry-run
+      Print the CreateJob request JSON without submitting the job.
+
+  status arguments:
+    --job-id
+      DLC job ID to inspect.
+    --detail
+      Print detailed job information instead of the compact status view.
+
+  stop arguments:
+    --job-id
+      DLC job ID to stop.
 """
 
 from __future__ import annotations

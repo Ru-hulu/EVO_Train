@@ -101,6 +101,7 @@ def read_client(
         return
 
     text = data.decode(encoding, errors="replace")
+    log(f"request from {format_address(client.address)}: {text}")
     response = handle_request(text)
     client.socket.sendall(json.dumps(response, ensure_ascii=False).encode(encoding))
     close_client(selector, client, "response sent")
