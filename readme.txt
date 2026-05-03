@@ -1,3 +1,6 @@
+start：
+      python3 server_tcp/server_connection.py --host 0.0.0.0 --port 9000 --workers 4
+structure：
                               ┌────────────────────┐
                                       Client
                              roboclaw 训练中心-在线训练
