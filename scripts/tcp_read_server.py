@@ -14,13 +14,13 @@ import socket
 import sys
 from dataclasses import dataclass
 from typing import Any
+from sql_pack import sql_add_user_task, sql_delete_user_task, sql_get_user_all_task
 
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 9884
 DEFAULT_MAX_CONNECTIONS = 1000
 DEFAULT_RECV_BYTES = 4096
-TASKS_BY_USER: dict[str, list[dict[str, str]]] = {}
 
 
 @dataclass
@@ -116,23 +116,22 @@ def handle_request(text: str) -> dict[str, Any]:
     username = str(request.get("username") or "").strip()
     task_name = str(request.get("taskName") or "").strip()
     action = str(request.get("action") or "").strip()
-    tasks = TASKS_BY_USER.setdefault(username, [])
+    tasks = sql_get_user_all_task(username)
     if action == "任务同步":
         message = "sync success"
         return {"message": message, "tasks": tasks}
     if not username or not task_name:
-        return {"message": "invalid request", "tasks": TASKS_BY_USER.get(username, [])}
+        return {"message": "invalid request", "tasks": tasks}
     if action == "开始训练":
-        if any(task["taskName"] == task_name for task in tasks):
-            message = "create task failed"
-        else:
-            tasks.append({"taskName": task_name, "status": ""})
+        if sql_add_user_task(username, task_name):
             message = "create task success"
+            tasks = sql_get_user_all_task(username)
+        else:
+            message = "create task failed"
     elif action == "结束训练":
-        original_count = len(tasks)
-        tasks[:] = [task for task in tasks if task.get("taskName") != task_name]
-        if len(tasks) < original_count:
+        if sql_delete_user_task(username, task_name):
             message = "delete task success"
+            tasks = sql_get_user_all_task(username)
         else:
             message = "delete task failed"
     else:
