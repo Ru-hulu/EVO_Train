@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "sql_lite_data" / "tasks.sqlite3"
+DEFAULT_DB_PATH = Path(__file__).resolve().parent / "data" / "tasks.sqlite3"
 DB_PATH = Path(os.environ.get("EVO_TRAIN_TASK_DB", DEFAULT_DB_PATH)).expanduser()
 
 

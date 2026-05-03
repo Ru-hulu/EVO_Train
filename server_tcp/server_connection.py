@@ -14,11 +14,10 @@ from pathlib import Path
 from typing import Callable
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-for module_path in (PROJECT_ROOT, PROJECT_ROOT / "train.py", PROJECT_ROOT / "thread_pool"):
-    sys.path.insert(0, str(module_path))
+sys.path.insert(0, str(PROJECT_ROOT))
 
-from server_function import handle_request_text
-from thread_pool import ThreadPool, TrainTaskEvent
+from thread_pool.thread_pool import ThreadPool, TrainTaskEvent
+from train.server_function import handle_request_text
 
 
 DEFAULT_HOST = "0.0.0.0"

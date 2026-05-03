@@ -4,11 +4,8 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 from typing import Any
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+
 from sql_lite.sql_pack import sql_add_user_task, sql_delete_user_task, sql_get_user_all_task
 
 
