@@ -89,7 +89,7 @@ class _HumanFormatter(logging.Formatter):
 
     def format(self, record: LogRecord) -> str:
         ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created))
-        ms = int((record.created - int(record.created)) * 1000)
+        ms = int(record.created * 1000) % 1000
         return (
             f"{ts}.{ms:03d} {record.levelname:<7} "
             f"[{record.name}] "
@@ -105,9 +105,10 @@ class _JsonFormatter(logging.Formatter):
     """One JSON object per line — grep-friendly + ELK / Loki compatible."""
 
     def format(self, record: LogRecord) -> str:
+        ms = int(record.created * 1000) % 1000
         payload: dict[str, object] = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created))
-            + f".{int((record.created - int(record.created)) * 1000):03d}Z",
+            + f".{ms:03d}Z",
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
