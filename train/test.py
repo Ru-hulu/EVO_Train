@@ -21,7 +21,7 @@ client = Client(
 # 任务资源配置
 spec = JobSpec(
     type='Worker',
-    image=f'registry-vpc.cn-hangzhou.cr.aliyuncs.com/pai-dlc/pytorch:2.8-gpu-py312-cu130-ubuntu24.04',
+    image=f'dsw-registry-vpc.cn-hangzhou.cr.aliyuncs.com/pai/pytorch:2.8-gpu-py312-cu130-ubuntu24.04-2b58613b-b2e26b6d',
     pod_count=1,
     resource_config=ResourceConfig(cpu='4', memory='5Gi')
 )
