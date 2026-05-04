@@ -24,7 +24,7 @@ spec = JobSpec(
     type='Worker',
     image=f'registry-vpc.cn-hangzhou.hangzhou.aliyuncs.com/pai-dlc/ppu-training:2.0.0-pytorch2.9.0-ppu-py312-cu129-ubuntu24.04',
     pod_count=1,
-    resource_config=ResourceConfig(cpu='1', memory='2Gi')
+    resource_config=ResourceConfig(cpu='4', memory='5Gi')
 )
 
 # 创建任务请求
