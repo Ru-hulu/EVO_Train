@@ -6,7 +6,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from sql_lite.sql_pack import sql_add_user_task, sql_delete_user_task, sql_get_user_all_task
+from evo_train_logging import get_logger
+from sql_lite.sql_pack import (
+    sql_add_user_task,
+    sql_delete_user_task,
+    sql_get_user_all_task,
+)
+
+_logger = get_logger("train.server_function")
 
 
 def handle_request(text: str) -> dict[str, Any]:
@@ -14,6 +21,7 @@ def handle_request(text: str) -> dict[str, Any]:
     try:
         request = json.loads(text)
     except json.JSONDecodeError:
+        _logger.warning("invalid json payload: %r", text[:200])
         return {"message": "invalid json", "tasks": []}
 
     username = str(request.get("username") or "").strip()
