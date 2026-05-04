@@ -33,7 +33,7 @@ req = CreateJobRequest(
     display_name='ru-dlc-job',
     job_type='TFJob',
     job_specs=[spec],
-    user_command='python3 --version',
+    user_command='nvcc -V',
 )
 
 # 提交任务
