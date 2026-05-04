@@ -13,11 +13,14 @@ import argparse
 import queue
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from evo_train_logging import get_logger
 
 STOP_EVENT = object()
+
+_logger = get_logger("thread_pool")
 
 
 @dataclass
@@ -25,17 +28,22 @@ class TrainTaskEvent:
     client_id: str
     request_text: str
     response_callback: Callable[[str], None] | None = None
-
-
-def log(message: str) -> None:
-    """Print one thread-pool debug message."""
-    print(f"[thread_pool] {message}", flush=True)
+    event_id: str = field(default="-")
 
 
 def fake_train_task_handler(request_text: str) -> str:
     """Return a temporary debug response for one request."""
     time.sleep(0.2)
     return f"debug response for: {request_text}"
+
+
+def _extra(event: TrainTaskEvent | None, worker_id: str | int) -> dict[str, str]:
+    """Build the structured-log extra dict from event + worker context."""
+    return {
+        "client_id": event.client_id if event is not None else "-",
+        "worker_id": str(worker_id),
+        "event_id": event.event_id if event is not None else "-",
+    }
 
 
 class ThreadPool:
@@ -54,12 +62,21 @@ class ThreadPool:
             thread = threading.Thread(target=self._worker_loop, args=(index,), daemon=True)
             thread.start()
             self.threads.append(thread)
-        log(f"started {self.workers} worker threads")
+        _logger.info(
+            "thread pool started with %d workers",
+            self.workers,
+            extra=_extra(None, "pool"),
+        )
 
     def submit(self, event: TrainTaskEvent) -> None:
         """Push one training event into the worker queue."""
         self.train_task_queue.put(event)
-        log(f"queued event from {event.client_id}: {event.request_text}")
+        _logger.info(
+            "queued event from %s: %s",
+            event.client_id,
+            event.request_text,
+            extra=_extra(event, "pool"),
+        )
 
     def stop(self) -> None:
         """Stop all worker threads after queued work is done."""
@@ -67,16 +84,16 @@ class ThreadPool:
             self.train_task_queue.put(STOP_EVENT)
         for thread in self.threads:
             thread.join()
-        log("all worker threads stopped")
+        _logger.info("all worker threads stopped", extra=_extra(None, "pool"))
 
     def _worker_loop(self, worker_id: int) -> None:
         """Continuously consume queued events in one worker thread."""
-        log(f"worker-{worker_id} ready")
+        _logger.info("worker ready", extra=_extra(None, worker_id))
         while True:
-            event = self.train_task_queue.get() # thread safe no need lock
+            event = self.train_task_queue.get()  # thread safe no need lock
             try:
                 if event is STOP_EVENT:
-                    log(f"worker-{worker_id} stopping")
+                    _logger.info("worker stopping", extra=_extra(None, worker_id))
                     return
                 self._handle_event(worker_id, event)
             finally:
@@ -84,11 +101,23 @@ class ThreadPool:
 
     def _handle_event(self, worker_id: int, event: Any) -> None:
         """Run the task handler and optionally return its response."""
-        log(f"worker-{worker_id} handling {event.client_id}: {event.request_text}")
-        response = self.task_handler(event.request_text)
+        _logger.info(
+            "handling request: %s",
+            event.request_text,
+            extra=_extra(event, worker_id),
+        )
+        try:
+            response = self.task_handler(event.request_text)
+        except Exception:
+            _logger.exception(
+                "task handler raised for request: %s",
+                event.request_text,
+                extra=_extra(event, worker_id),
+            )
+            return
         if event.response_callback is not None:
             event.response_callback(response)
-        log(f"worker-{worker_id} finished {event.client_id}")
+        _logger.info("finished request", extra=_extra(event, worker_id))
 
 
 def build_parser() -> argparse.ArgumentParser:

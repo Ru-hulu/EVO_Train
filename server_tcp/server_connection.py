@@ -9,22 +9,29 @@ import selectors
 import socket
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from evo_train_logging import (
+    RequestContext,
+    get_logger,
+    setup_logging,
+    shutdown_logging,
+)
 from thread_pool.thread_pool import ThreadPool, TrainTaskEvent
 from train.server_function import handle_request_text
-
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 9000
 DEFAULT_MAX_CONNECTIONS = 1000
 DEFAULT_RECV_BYTES = 4096
 DEFAULT_IDLE_TIMEOUT = 120.0
+
+_logger = get_logger("server_tcp")
 
 
 @dataclass
@@ -35,19 +42,29 @@ class Client:
     idle_deadline: float = 0.0
     read_buffer: str = ""
     closed: bool = False
+    pending_event_id: str = field(default="-")
 
     @property
     def id(self) -> str:
         """Return a readable client identifier."""
         return format_address(self.address)
 
+    def context(self) -> RequestContext:
+        """Build the request context for log records tied to this client."""
+        return RequestContext(client_id=self.id, event_id=self.pending_event_id)
+
 
 TimerHeap = list[tuple[float, int, Client]]
 
 
-def log(message: str) -> None:
-    """Print one connection-layer debug message."""
-    print(f"[server_connection] {message}", flush=True)
+def _client_extra(client: Client) -> dict[str, str]:
+    """Standard log extras for any record about *client*."""
+    return client.context().as_extra(worker_id="server")
+
+
+def _connection_extra(address: tuple[str, int]) -> dict[str, str]:
+    """Log extras for events that don't yet have a Client (e.g. accept-time reject)."""
+    return RequestContext(client_id=format_address(address)).as_extra(worker_id="server")
 
 
 def format_address(address: tuple[str, int]) -> str:
@@ -67,14 +84,14 @@ def make_server_socket(host: str, port: int, backlog: int) -> socket.socket:
 
 
 def close_client(client: Client, reason: str) -> None:
-    """Close one client socket and print the close reason."""
+    """Close one client socket and log the close reason."""
     if client.closed:
         return
     client.closed = True
     try:
         client.socket.close()
     finally:
-        log(f"closed {client.id}: {reason}")
+        _logger.info("closed: %s", reason, extra=_client_extra(client))
 
 
 def unregister_and_close(selector: selectors.BaseSelector, client: Client, reason: str) -> None:
@@ -139,7 +156,7 @@ def make_response_callback(
             if not response_text.endswith("\n"):
                 response_text += "\n"
             client.socket.sendall(response_text.encode(encoding))
-            log(f"response sent to {client.id}")
+            _logger.info("response sent", extra=_client_extra(client))
         except OSError as exc:
             unregister_and_close(selector, client, f"send error: {exc}")
     return send_response
@@ -162,7 +179,11 @@ def accept_clients(
 
         active_connections = len(selector.get_map()) - 1
         if active_connections >= max_connections:
-            log(f"rejecting {format_address(address)}: max connections reached")
+            _logger.warning(
+                "rejecting %s: max connections reached",
+                format_address(address),
+                extra=_connection_extra(address),
+            )
             client_socket.close()
             continue
 
@@ -171,7 +192,12 @@ def accept_clients(
         client = Client(socket=client_socket, address=address, last_active=now)
         schedule_idle_timeout(timer_heap, timer_counter, client, idle_timeout)
         selector.register(client_socket, selectors.EVENT_READ, data=client)
-        log(f"accepted {client.id} ({active_connections + 1}/{max_connections})")
+        _logger.info(
+            "accepted (%d/%d)",
+            active_connections + 1,
+            max_connections,
+            extra=_client_extra(client),
+        )
 
 
 def read_client(
@@ -210,11 +236,18 @@ def read_client(
     if not request_text:
         return None
 
-    log(f"read event from {client.id}: {request_text}")
+    request_context = RequestContext.new(client.id)
+    client.pending_event_id = request_context.event_id
+    _logger.info(
+        "read request: %s",
+        request_text,
+        extra=request_context.as_extra(worker_id="server"),
+    )
     return TrainTaskEvent(
         client_id=client.id,
         request_text=request_text,
         response_callback=make_response_callback(selector, client, encoding),
+        event_id=request_context.event_id,
     )
 
 
@@ -240,7 +273,14 @@ def serve(args: argparse.Namespace) -> None:
     server = make_server_socket(args.host, args.port, args.max_connections)
     selector.register(server, selectors.EVENT_READ, data=None)
     pool.start()
-    log(f"listening on {args.host}:{args.port}, workers={args.workers}, idle_timeout={args.idle_timeout}s")
+    _logger.info(
+        "listening on %s:%d, workers=%d, idle_timeout=%.1fs",
+        args.host,
+        args.port,
+        args.workers,
+        args.idle_timeout,
+        extra=RequestContext().as_extra(worker_id="server"),
+    )
 
     try:
         while True:
@@ -270,7 +310,7 @@ def serve(args: argparse.Namespace) -> None:
                         pool.submit(event)
             process_idle_timeouts(selector, timer_heap)
     except KeyboardInterrupt:
-        log("stopping")
+        _logger.info("stopping", extra=RequestContext().as_extra(worker_id="server"))
     finally:
         close_registered_sockets(selector)
         selector.close()
@@ -319,7 +359,11 @@ def main() -> int:
         print("--idle-timeout must be greater than 0", file=sys.stderr)
         return 2
 
-    serve(args)
+    setup_logging()
+    try:
+        serve(args)
+    finally:
+        shutdown_logging()
     return 0
 
 
