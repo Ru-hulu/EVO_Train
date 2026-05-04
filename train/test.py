@@ -18,7 +18,6 @@ client = Client(
         endpoint=f'pai-dlc.{region}.aliyuncs.com',
     )
 )
-
 # 任务资源配置
 spec = JobSpec(
     type='Worker',
