@@ -33,7 +33,7 @@ req = CreateJobRequest(
     display_name='ru-dlc-job',
     job_type='TFJob',
     job_specs=[spec],
-    user_command='nvidia-smi',
+    user_command='python3 --version',
 )
 
 # 提交任务
