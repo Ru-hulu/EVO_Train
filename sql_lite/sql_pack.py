@@ -8,9 +8,10 @@ from contextlib import contextmanager
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-
-DATABASE_URL = os.environ.get("EVO_TRAIN_DATABASE_URL") or os.environ.get("DATABASE_URL")
-
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "mysql+pymysql://evodata:cqmygYSDSS123@rm-bp1y7lfvg5u0hxh8a.mysql.rds.aliyuncs.com:3306/evo_data?charset=utf8mb4"
+)
 
 def _load_pymysql() -> Any:
     try:
